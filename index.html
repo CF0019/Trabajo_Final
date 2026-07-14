@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitoreo Inteligente · Sistema de Alerta Temprana ante Inundaciones</title>
+<meta name="description" content="Prototipo de alerta temprana ante inundaciones con Arduino Uno y sensor ultrasónico HC-SR04. Universidad Tecnológica de Panamá, Centro Regional de Veraguas.">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+  :root{
+    --ink: #060a14;
+    --panel: #0d1526;
+    --panel-hi: #121e35;
+    --hair: #1e2b42;
+    --hair-soft: #172136;
+    --brand-a: #38bdf8;
+    --brand-b: #2563eb;
+    --normal: #34d399;
+    --caution: #fbbf24;
+    --danger: #f87171;
+  }
+  html{ scroll-behavior: smooth; }
+  body{ background: var(--ink); }
+  ::selection{ background: rgba(56,189,248,.3); color:#fff; }
+
+  ::-webkit-scrollbar{ width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track{ background: var(--ink); }
+  ::-webkit-scrollbar-thumb{ background: var(--hair); border-radius: 999px; border: 2px solid var(--ink); }
+  ::-webkit-scrollbar-thumb:hover{ background: #2b3c58; }
+
+  .grid-bg{
+    background-image:
+      linear-gradient(to right, rgba(148,163,184,0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148,163,184,0.06) 1px, transparent 1px);
+    background-size: 42px 42px;
+  }
+
+  .text-gradient{
+    background: linear-gradient(90deg, #7dd3fc, #38bdf8 45%, #818cf8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glow-card{
+    position: relative;
+    background: linear-gradient(180deg, var(--panel), var(--panel-hi));
+    border: 1px solid var(--hair);
+  }
+  .glow-card::before{
+    content:"";
+    position:absolute; inset:-1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(120deg, rgba(56,189,248,0), rgba(56,189,248,.35), rgba(56,189,248,0));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity .4s ease;
+    pointer-events: none;
+  }
+  .glow-card:hover::before{ opacity: 1; }
+
+  @keyframes radar-ping{
+    0%{ transform: scale(0.3); opacity: .7; }
+    100%{ transform: scale(1.8); opacity: 0; }
+  }
+  .radar-ring{
+    position:absolute; inset:0; border-radius:999px;
+    border: 1px solid rgba(56,189,248,.55);
+    animation: radar-ping 2.6s cubic-bezier(.2,.6,.4,1) infinite;
+  }
+  .radar-ring.d2{ animation-delay: .9s; }
+  .radar-ring.d3{ animation-delay: 1.8s; }
+
+  @keyframes wave-shift{
+    0%{ transform: translateX(0) translateZ(0); }
+    100%{ transform: translateX(-50%) translateZ(0); }
+  }
+  .wave{ animation: wave-shift 6s linear infinite; }
+  .wave.wave-2{ animation-duration: 9s; animation-direction: reverse; opacity:.55; }
+
+  @keyframes blink-glow{
+    0%, 100%{ box-shadow: 0 0 0 0 rgba(248,113,113,.55); }
+    50%{ box-shadow: 0 0 0 14px rgba(248,113,113,0); }
+  }
+  .alert-pulse{ animation: blink-glow 1.1s ease-out infinite; }
+
+  @keyframes soft-blink{
+    0%, 100%{ opacity: 1; }
+    50%{ opacity: .35; }
+  }
+  .soft-blink{ animation: soft-blink 1s ease-in-out infinite; }
+
+  @keyframes scan{
+    0%{ transform: translateY(-100%); }
+    100%{ transform: translateY(100%); }
+  }
+  .scanline{ animation: scan 3.2s linear infinite; }
+
+  @keyframes float-y{
+    0%, 100%{ transform: translateY(0); }
+    50%{ transform: translateY(-6px); }
+  }
+  .float{ animation: float-y 5s ease-in-out infinite; }
+
+  .tab-active{ color:#eaf2ff; border-color: var(--brand-a); background: rgba(56,189,248,.08); }
+  .comp-active{ border-color: var(--brand-a) !important; background: rgba(56,189,248,.08) !important; }
+
+  .term-line{ white-space: pre-wrap; word-break: break-word; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  }
+
+  input[type="range"]{ -webkit-appearance:none; appearance:none; height:6px; border-radius:999px; background: linear-gradient(90deg, var(--brand-a), var(--brand-b)); }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:999px;
+    background:#eaf2ff; border:3px solid var(--brand-b); cursor:pointer; margin-top:-1px;
+    box-shadow: 0 0 0 4px rgba(56,189,248,.15);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:20px; height:20px; border-radius:999px; background:#eaf2ff; border:3px solid var(--brand-b); cursor:pointer;
+  }
+</style>
+</head>
+
+<body class="bg-[#060a14] text-slate-200 font-body antialiased">
+
+<!-- ============ NAV ============ -->
+<header class="fixed top-0 inset-x-0 z-50 backdrop-blur-md bg-[#060a14]/75 border-b border-white/5">
+  <div class="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+    <a href="#inicio" class="flex items-center gap-2.5 group">
+      <span class="relative w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+        <i data-lucide="radar" class="w-4.5 h-4.5 text-white" style="width:18px;height:18px"></i>
+      </span>
+      <span class="font-display font-semibold tracking-tight text-slate-100 text-sm sm:text-base">SAT<span class="text-sky-400">·</span>Inundaciones</span>
+    </a>
+    <nav class="hidden lg:flex items-center gap-7 text-[13px] font-medium text-slate-400">
+      <a href="#problema" class="hover:text-slate-100 transition-colors">El problema</a>
+      <a href="#metodologia" class="hover:text-slate-100 transition-colors">Metodología</a>
+      <a href="#hardware" class="hover:text-slate-100 transition-colors">Hardware</a>
+      <a href="#arquitectura" class="hover:text-slate-100 transition-colors">Arquitectura</a>
+      <a href="#simulador" class="hover:text-slate-100 transition-colors">Simulador</a>
+      <a href="#viabilidad" class="hover:text-slate-100 transition-colors">Viabilidad</a>
+      <a href="#equipo" class="hover:text-slate-100 transition-colors">Equipo</a>
+    </nav>
+    <div class="flex items-center gap-3">
+      <span class="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 border border-emerald-400/25 bg-emerald-400/5 px-2.5 py-1 rounded-full">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 soft-blink"></span> SISTEMA EN LÍNEA
+      </span>
+      <a href="#simulador" class="text-[13px] font-semibold px-4 py-2 rounded-lg bg-gradient-to-r from-sky-400 to-blue-600 text-white hover:brightness-110 transition shadow-lg shadow-sky-500/20">Ver simulador</a>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section id="inicio" class="relative pt-40 pb-28 px-5 sm:px-8 overflow-hidden grid-bg">
+  <div class="absolute inset-0 bg-gradient-to-b from-[#060a14] via-[#060a14]/40 to-[#060a14] pointer-events-none"></div>
+  <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[900px] rounded-full bg-sky-500/10 blur-[140px] pointer-events-none"></div>
+
+  <div class="relative max-w-7xl mx-auto grid lg:grid-cols-[1.1fr_.9fr] gap-16 items-center">
+    <div>
+      <div class="inline-flex items-center gap-2 text-[12px] font-mono uppercase tracking-widest text-sky-300/90 border border-sky-400/20 bg-sky-400/5 px-3 py-1.5 rounded-full mb-6">
+        <i data-lucide="graduation-cap" style="width:14px;height:14px"></i>
+        Universidad Tecnológica de Panamá · Centro Regional de Veraguas
+      </div>
+
+      <h1 class="font-display font-semibold leading-[1.05] text-4xl sm:text-5xl lg:text-[3.4rem] text-slate-50 tracking-tight">
+        Monitoreo inteligente<br>
+        para <span class="text-gradient">anticipar inundaciones</span>
+      </h1>
+
+      <p class="mt-6 text-slate-400 text-base sm:text-lg leading-relaxed max-w-xl">
+        Un prototipo de alerta temprana construido con Arduino Uno y un sensor ultrasónico HC‑SR04, pensado para comunidades cerca de ríos y quebradas que hoy no cuentan con monitoreo accesible. Mide el nivel del agua en tiempo real, clasifica el riesgo y avisa antes de que sea tarde.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center gap-4">
+        <a href="#simulador" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-600 text-white font-semibold text-sm hover:brightness-110 active:scale-[.98] transition shadow-xl shadow-sky-500/25">
+          <i data-lucide="waves" style="width:17px;height:17px"></i> Ver simulador
+        </a>
+        <a href="#hardware" class="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-white/10 text-slate-200 font-semibold text-sm hover:bg-white/5 active:scale-[.98] transition">
+          <i data-lucide="cpu" style="width:17px;height:17px"></i> Explorar prototipo
+        </a>
+      </div>
+
+      <div class="mt-10 pt-8 border-t border-white/5">
+        <p class="text-[11px] uppercase tracking-widest text-slate-500 font-mono mb-3">Desarrollado por</p>
+        <div class="flex flex-wrap gap-x-8 gap-y-3">
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full bg-panel-hi border border-white/10 flex items-center justify-center text-xs font-display font-semibold text-sky-300 bg-[#121e35]">CF</span>
+            <span class="text-sm text-slate-300">Cristian Figueroa</span>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-xs font-display font-semibold text-sky-300 bg-[#121e35]">LR</span>
+            <span class="text-sm text-slate-300">Leidy Reyes</span>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <span class="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-xs font-display font-semibold text-sky-300 bg-[#121e35]">SO</span>
+            <span class="text-sm text-slate-300">Sahid Ortiz</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mini telemetry HUD -->
+    <div class="relative float">
+      <div class="glow-card rounded-2xl p-6 shadow-2xl shadow-black/40">
+        <div class="flex items-center justify-between mb-5">
+          <span class="text-[11px] font-mono text-slate-500 uppercase tracking-widest">Lectura en vivo · demo</span>
+          <span id="hero-dot" class="w-2 h-2 rounded-full bg-emerald-400 soft-blink"></span>
+        </div>
+
+        <div class="relative flex justify-center py-6">
+          <div class="relative w-16 h-16 rounded-full bg-sky-500/10 border border-sky-400/30 flex items-center justify-center">
+            <i data-lucide="radio" class="text-sky-300" style="width:24px;height:24px"></i>
+            <span class="radar-ring"></span>
+            <span class="radar-ring d2"></span>
+            <span class="radar-ring d3"></span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mt-4">
+          <div class="rounded-xl border border-white/5 bg-black/20 p-3.5">
+            <p class="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Distancia</p>
+            <p id="hero-dist" class="font-mono text-xl text-slate-100 mt-1">— cm</p>
+          </div>
+          <div class="rounded-xl border border-white/5 bg-black/20 p-3.5">
+            <p class="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Nivel</p>
+            <p id="hero-level" class="font-mono text-xl text-slate-100 mt-1">— cm</p>
+          </div>
+        </div>
+
+        <div id="hero-state" class="mt-3 rounded-xl border px-4 py-3 flex items-center gap-2.5 transition-colors">
+          <i data-lucide="check-circle-2" class="text-emerald-400" style="width:18px;height:18px"></i>
+          <span class="font-mono text-sm font-semibold tracking-wide">ESTADO NORMAL</span>
+        </div>
+      </div>
+      <p class="text-center text-[11px] text-slate-600 font-mono mt-3">Simulación ilustrativa — baja al panel de simulación para controlarla tú mismo</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EL PROBLEMA ============ -->
+<section id="problema" class="relative px-5 sm:px-8 py-24 border-t border-white/5">
+  <div class="max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">El problema</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Panamá se inunda cada año, y casi nadie lo ve venir</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">Las provincias cercanas a ríos y quebradas enfrentan crecidas súbitas durante la temporada lluviosa. Los sistemas comerciales de monitoreo existen, pero su costo los deja fuera del alcance de las comunidades que más los necesitan.</p>
+    </div>
+
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-16">
+      <div class="glow-card rounded-2xl p-6">
+        <i data-lucide="cloud-rain" class="text-sky-400 mb-4" style="width:22px;height:22px"></i>
+        <p class="font-display text-3xl font-semibold text-slate-50">7 meses</p>
+        <p class="text-sm text-slate-500 mt-1.5 leading-snug">Duración de la temporada lluviosa en Panamá, de mayo a noviembre</p>
+      </div>
+      <div class="glow-card rounded-2xl p-6">
+        <i data-lucide="map-pinned" class="text-sky-400 mb-4" style="width:22px;height:22px"></i>
+        <p class="font-display text-3xl font-semibold text-slate-50">4 regiones</p>
+        <p class="text-sm text-slate-500 mt-1.5 leading-snug">Veraguas, Chiriquí, Bocas del Toro y la Comarca Ngäbe‑Buglé, expuestas cada año</p>
+      </div>
+      <div class="glow-card rounded-2xl p-6">
+        <i data-lucide="trending-up" class="text-rose-400 mb-4" style="width:22px;height:22px"></i>
+        <p class="font-display text-3xl font-semibold text-slate-50">$2,000+</p>
+        <p class="text-sm text-slate-500 mt-1.5 leading-snug">Costo de los sistemas comerciales de monitoreo disponibles en el mercado</p>
+      </div>
+      <div class="glow-card rounded-2xl p-6">
+        <i data-lucide="hand-coins" class="text-emerald-400 mb-4" style="width:22px;height:22px"></i>
+        <p class="font-display text-3xl font-semibold text-slate-50">$38.95</p>
+        <p class="text-sm text-slate-500 mt-1.5 leading-snug">Costo estimado de este prototipo, con componentes de bajo costo</p>
+      </div>
+    </div>
+
+    <!-- Impacto en comunidades: accordion -->
+    <div class="glow-card rounded-2xl overflow-hidden">
+      <div class="p-6 sm:p-8 border-b border-white/5">
+        <h3 class="font-display font-semibold text-xl text-slate-100">Impacto en las comunidades — el desafío</h3>
+        <p class="text-sm text-slate-500 mt-1">Tres barreras que este proyecto busca reducir</p>
+      </div>
+      <div id="accordion" class="divide-y divide-white/5">
+        <button class="accordion-btn w-full text-left px-6 sm:px-8 py-5 flex items-center justify-between gap-4 hover:bg-white/[.02] transition" data-target="acc-1">
+          <span class="flex items-center gap-3 text-slate-200 font-medium text-sm sm:text-base">
+            <i data-lucide="home" class="text-sky-400 shrink-0" style="width:18px;height:18px"></i>
+            Vulnerabilidad de las comunidades rurales
+          </span>
+          <i data-lucide="chevron-down" class="acc-chev text-slate-500 shrink-0 transition-transform" style="width:18px;height:18px"></i>
+        </button>
+        <div id="acc-1" class="acc-panel hidden px-6 sm:px-8 pb-6 -mt-2">
+          <p class="text-sm text-slate-400 leading-relaxed pl-8">Las crecidas súbitas dañan viviendas, cultivos, vías de comunicación y servicios básicos, profundizando la vulnerabilidad de poblaciones que ya cuentan con pocos recursos para recuperarse.</p>
+        </div>
+
+        <button class="accordion-btn w-full text-left px-6 sm:px-8 py-5 flex items-center justify-between gap-4 hover:bg-white/[.02] transition" data-target="acc-2">
+          <span class="flex items-center gap-3 text-slate-200 font-medium text-sm sm:text-base">
+            <i data-lucide="banknote" class="text-sky-400 shrink-0" style="width:18px;height:18px"></i>
+            Barrera económica de los sistemas comerciales
+          </span>
+          <i data-lucide="chevron-down" class="acc-chev text-slate-500 shrink-0 transition-transform" style="width:18px;height:18px"></i>
+        </button>
+        <div id="acc-2" class="acc-panel hidden px-6 sm:px-8 pb-6 -mt-2">
+          <p class="text-sm text-slate-400 leading-relaxed pl-8">Las soluciones disponibles en el mercado tienen costos elevados que impiden su implementación en comunidades con recursos limitados, dejando zonas de alto riesgo sin ningún tipo de monitoreo.</p>
+        </div>
+
+        <button class="accordion-btn w-full text-left px-6 sm:px-8 py-5 flex items-center justify-between gap-4 hover:bg-white/[.02] transition" data-target="acc-3">
+          <span class="flex items-center gap-3 text-slate-200 font-medium text-sm sm:text-base">
+            <i data-lucide="bell-off" class="text-sky-400 shrink-0" style="width:18px;height:18px"></i>
+            Ausencia de alertas oportunas
+          </span>
+          <i data-lucide="chevron-down" class="acc-chev text-slate-500 shrink-0 transition-transform" style="width:18px;height:18px"></i>
+        </button>
+        <div id="acc-3" class="acc-panel hidden px-6 sm:px-8 pb-6 -mt-2">
+          <p class="text-sm text-slate-400 leading-relaxed pl-8">Sin monitoreo constante, la población no recibe avisos a tiempo para tomar medidas preventivas, lo que reduce su capacidad de reacción frente a una crecida repentina.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ METODOLOGÍA ============ -->
+<section id="metodologia" class="relative px-5 sm:px-8 py-24 border-t border-white/5 grid-bg">
+  <div class="absolute inset-0 bg-gradient-to-b from-[#060a14] via-transparent to-[#060a14] pointer-events-none"></div>
+  <div class="relative max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Metodología aplicada</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Cada diseño, con su propia prueba</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">El desarrollo siguió el Modelo en V como metodología principal: cada etapa de diseño tiene una contraparte de verificación, lo que mantiene trazabilidad entre requisitos y pruebas. Se complementó con Design Thinking para entender primero a las comunidades en riesgo.</p>
+    </div>
+
+    <!-- V Model -->
+    <div class="glow-card rounded-2xl p-6 sm:p-10 mb-10">
+      <div class="flex items-center justify-between mb-8 flex-wrap gap-3">
+        <h3 class="font-display font-semibold text-lg text-slate-100">Modelo en V</h3>
+        <div class="flex items-center gap-5 text-xs font-mono text-slate-500">
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-sky-500/60 border border-sky-400"></span>Diseño</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500/40 border border-emerald-400"></span>Validación</span>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3" style="--i:0">
+          <div class="rounded-xl border border-sky-400/30 bg-sky-400/5 px-4 py-3 text-sm text-slate-200 font-medium" style="margin-right:0%">Requisitos</div>
+          <span class="w-6 h-px bg-hair" style="background:var(--hair)"></span>
+          <div class="rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-4 py-3 text-sm text-slate-200 font-medium text-right" style="margin-left:0%">Validación</div>
+        </div>
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div class="rounded-xl border border-sky-400/30 bg-sky-400/5 px-4 py-3 text-sm text-slate-200 font-medium" style="margin-right:8%">Hardware</div>
+          <span class="w-6 h-px" style="background:var(--hair)"></span>
+          <div class="rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-4 py-3 text-sm text-slate-200 font-medium text-right" style="margin-left:8%">Pruebas del sistema</div>
+        </div>
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div class="rounded-xl border border-sky-400/30 bg-sky-400/5 px-4 py-3 text-sm text-slate-200 font-medium" style="margin-right:16%">Arquitectura</div>
+          <span class="w-6 h-px" style="background:var(--hair)"></span>
+          <div class="rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-4 py-3 text-sm text-slate-200 font-medium text-right" style="margin-left:16%">Pruebas de integración</div>
+        </div>
+        <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div class="rounded-xl border border-sky-400/50 bg-sky-400/10 px-4 py-3 text-sm text-slate-100 font-semibold" style="margin-right:26%">Diseño detallado</div>
+          <span class="w-6 h-px" style="background:var(--brand-a)"></span>
+          <div class="rounded-xl border border-emerald-400/50 bg-emerald-400/10 px-4 py-3 text-sm text-slate-100 font-semibold text-right" style="margin-left:26%">Implementación</div>
+        </div>
+      </div>
+      <p class="text-center text-[11px] font-mono text-slate-600 mt-6">↳ el vértice: donde el diseño se convierte en código, simulado en Wokwi</p>
+    </div>
+
+    <!-- Design thinking -->
+    <div class="glow-card rounded-2xl p-6 sm:p-10">
+      <h3 class="font-display font-semibold text-lg text-slate-100 mb-1.5">Design Thinking, como metodología complementaria</h3>
+      <p class="text-sm text-slate-500 mb-7 max-w-xl">Se aplicaron las etapas de empatizar y definir para comprender las necesidades reales de las comunidades en riesgo, antes de diseñar la solución.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div class="rounded-xl border border-sky-400/50 bg-sky-400/10 p-4 text-center">
+          <i data-lucide="heart-handshake" class="mx-auto text-sky-300 mb-2" style="width:20px;height:20px"></i>
+          <p class="text-xs font-semibold text-slate-100">Empatizar</p>
+          <p class="text-[10px] text-sky-400 font-mono mt-0.5">aplicado</p>
+        </div>
+        <div class="rounded-xl border border-sky-400/50 bg-sky-400/10 p-4 text-center">
+          <i data-lucide="target" class="mx-auto text-sky-300 mb-2" style="width:20px;height:20px"></i>
+          <p class="text-xs font-semibold text-slate-100">Definir</p>
+          <p class="text-[10px] text-sky-400 font-mono mt-0.5">aplicado</p>
+        </div>
+        <div class="rounded-xl border border-white/5 p-4 text-center opacity-40">
+          <i data-lucide="lightbulb" class="mx-auto text-slate-400 mb-2" style="width:20px;height:20px"></i>
+          <p class="text-xs font-medium text-slate-400">Idear</p>
+        </div>
+        <div class="rounded-xl border border-white/5 p-4 text-center opacity-40">
+          <i data-lucide="hammer" class="mx-auto text-slate-400 mb-2" style="width:20px;height:20px"></i>
+          <p class="text-xs font-medium text-slate-400">Prototipar</p>
+        </div>
+        <div class="rounded-xl border border-white/5 p-4 text-center opacity-40">
+          <i data-lucide="flask-conical" class="mx-auto text-slate-400 mb-2" style="width:20px;height:20px"></i>
+          <p class="text-xs font-medium text-slate-400">Testear</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HARDWARE ============ -->
+<section id="hardware" class="relative px-5 sm:px-8 py-24 border-t border-white/5">
+  <div class="max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Diseño del prototipo</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Componentes de bajo costo, fáciles de conseguir</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">Toca cada componente para ver su función dentro del sistema.</p>
+    </div>
+
+    <div class="grid lg:grid-cols-[.85fr_1.15fr] gap-6">
+      <!-- component list -->
+      <div id="comp-list" class="space-y-2.5">
+        <!-- injected by JS -->
+      </div>
+
+      <!-- detail panel -->
+      <div id="comp-detail" class="glow-card rounded-2xl p-7 sm:p-8 lg:sticky lg:top-24 h-fit">
+        <!-- injected by JS -->
+      </div>
+    </div>
+
+    <!-- connections table -->
+    <div class="mt-10 glow-card rounded-2xl overflow-hidden">
+      <div class="p-6 sm:p-8 border-b border-white/5 flex items-center gap-3">
+        <i data-lucide="cable" class="text-sky-400" style="width:20px;height:20px"></i>
+        <h3 class="font-display font-semibold text-lg text-slate-100">Tabla de conexiones</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm font-mono">
+          <thead>
+            <tr class="text-left text-slate-500 text-[11px] uppercase tracking-wider border-b border-white/5">
+              <th class="px-6 sm:px-8 py-3.5 font-medium">Componente</th>
+              <th class="px-6 sm:px-8 py-3.5 font-medium">Pin</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">TRIG</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D2</td></tr>
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">ECHO</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D3</td></tr>
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">LED Verde</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D4</td></tr>
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">LED Amarillo</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D5</td></tr>
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">LED Rojo</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D6</td></tr>
+            <tr class="hover:bg-white/[.02] transition"><td class="px-6 sm:px-8 py-3.5 text-slate-300">Buzzer</td><td class="px-6 sm:px-8 py-3.5 text-sky-400">D7</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARQUITECTURA / DIAGRAMAS ============ -->
+<section id="arquitectura" class="relative px-5 sm:px-8 py-24 border-t border-white/5 grid-bg">
+  <div class="absolute inset-0 bg-gradient-to-b from-[#060a14] via-transparent to-[#060a14] pointer-events-none"></div>
+  <div class="relative max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Arquitectura del sistema</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">De la señal del sensor a la alerta</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">Cuatro módulos conectados en cadena: la medición fluye del sensor al Arduino, y del Arduino a los mecanismos de alerta.</p>
+    </div>
+
+    <!-- module flow -->
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+      <div class="glow-card rounded-2xl p-6 relative">
+        <span class="text-[10px] font-mono text-slate-600">01</span>
+        <i data-lucide="radio-tower" class="text-sky-400 my-3" style="width:22px;height:22px"></i>
+        <p class="font-semibold text-slate-100 text-sm">Sensor de medición</p>
+        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">HC‑SR04 mide la distancia hasta la superficie del agua mediante pulsos ultrasónicos.</p>
+        <i data-lucide="chevron-right" class="hidden lg:block absolute top-1/2 -right-3 -translate-y-1/2 text-slate-700" style="width:20px;height:20px"></i>
+      </div>
+      <div class="glow-card rounded-2xl p-6 relative">
+        <span class="text-[10px] font-mono text-slate-600">02</span>
+        <i data-lucide="cpu" class="text-sky-400 my-3" style="width:22px;height:22px"></i>
+        <p class="font-semibold text-slate-100 text-sm">Procesamiento de datos</p>
+        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">Arduino Uno calcula el nivel del agua y lo clasifica contra los umbrales de riesgo.</p>
+        <i data-lucide="chevron-right" class="hidden lg:block absolute top-1/2 -right-3 -translate-y-1/2 text-slate-700" style="width:20px;height:20px"></i>
+      </div>
+      <div class="glow-card rounded-2xl p-6 relative">
+        <span class="text-[10px] font-mono text-slate-600">03</span>
+        <i data-lucide="siren" class="text-sky-400 my-3" style="width:22px;height:22px"></i>
+        <p class="font-semibold text-slate-100 text-sm">Sistema de alertas</p>
+        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">LEDs y buzzer se activan según el estado detectado: normal, precaución o peligro.</p>
+        <i data-lucide="chevron-right" class="hidden lg:block absolute top-1/2 -right-3 -translate-y-1/2 text-slate-700" style="width:20px;height:20px"></i>
+      </div>
+      <div class="glow-card rounded-2xl p-6">
+        <span class="text-[10px] font-mono text-slate-600">04</span>
+        <i data-lucide="terminal" class="text-sky-400 my-3" style="width:22px;height:22px"></i>
+        <p class="font-semibold text-slate-100 text-sm">Monitor Serial</p>
+        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">Simula el envío de un mensaje SMS con el estado actual del sistema.</p>
+      </div>
+    </div>
+
+    <!-- diagram cards -->
+    <div class="grid md:grid-cols-3 gap-5">
+      <div class="glow-card rounded-2xl p-6 flex flex-col">
+        <div class="rounded-xl bg-black/30 border border-white/5 h-40 flex items-center justify-center mb-4">
+          <svg viewBox="0 0 160 90" class="w-4/5" fill="none">
+            <rect x="18" y="18" width="60" height="40" rx="4" stroke="#38bdf8" stroke-width="1.5" opacity=".7"/>
+            <rect x="100" y="10" width="40" height="16" rx="2" stroke="#818cf8" stroke-width="1.5" opacity=".7"/>
+            <rect x="100" y="34" width="40" height="16" rx="2" stroke="#34d399" stroke-width="1.5" opacity=".7"/>
+            <rect x="100" y="58" width="40" height="16" rx="2" stroke="#f87171" stroke-width="1.5" opacity=".7"/>
+            <path d="M78 30h14v-14h8" stroke="#475569" stroke-width="1.2"/>
+            <path d="M78 40h14v2h8" stroke="#475569" stroke-width="1.2"/>
+            <path d="M78 50h14v24h8" stroke="#475569" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <p class="font-semibold text-slate-100 text-sm">Diagrama de circuito</p>
+        <p class="text-xs text-slate-500 mt-1 leading-relaxed flex-1">Conexión del HC‑SR04, LEDs y buzzer al Arduino Uno según la tabla de pines.</p>
+      </div>
+
+      <div class="glow-card rounded-2xl p-6 flex flex-col">
+        <div class="rounded-xl bg-black/30 border border-white/5 h-40 flex items-center justify-center mb-4">
+          <svg viewBox="0 0 160 90" class="w-4/5" fill="none">
+            <rect x="10" y="8" width="42" height="16" rx="8" stroke="#38bdf8" stroke-width="1.5"/>
+            <path d="M31 24v10" stroke="#475569" stroke-width="1.2"/>
+            <rect x="10" y="34" width="42" height="16" rx="3" stroke="#818cf8" stroke-width="1.5"/>
+            <path d="M31 50v10" stroke="#475569" stroke-width="1.2"/>
+            <path d="M31 60l-10 10h20z" stroke="#fbbf24" stroke-width="1.5"/>
+            <path d="M60 65h20M60 65l6-6M60 65l6 6" stroke="#475569" stroke-width="1.2"/>
+            <rect x="90" y="55" width="60" height="20" rx="3" stroke="#34d399" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <p class="font-semibold text-slate-100 text-sm">Diagrama de flujo</p>
+        <p class="text-xs text-slate-500 mt-1 leading-relaxed flex-1">Lógica de decisión: medir, calcular nivel, comparar contra umbrales y activar alertas.</p>
+      </div>
+
+      <div class="glow-card rounded-2xl p-6 flex flex-col">
+        <div class="rounded-xl bg-black/30 border border-white/5 h-40 flex items-center justify-center mb-4 relative overflow-hidden">
+          <i data-lucide="play-circle" class="text-sky-400" style="width:34px;height:34px"></i>
+          <div class="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-sky-400/10 to-transparent scanline"></div>
+        </div>
+        <p class="font-semibold text-slate-100 text-sm">Simulación en Wokwi</p>
+        <p class="text-xs text-slate-500 mt-1 leading-relaxed flex-1">Todo el sistema fue validado virtualmente antes de una eventual implementación física.</p>
+        <a href="https://wokwi.com/" target="_blank" rel="noopener" class="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-sky-400 hover:text-sky-300 transition">
+          Abrir Wokwi <i data-lucide="arrow-up-right" style="width:14px;height:14px"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SIMULADOR ============ -->
+<section id="simulador" class="relative px-5 sm:px-8 py-24 border-t border-white/5">
+  <div class="max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Simulador interactivo</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Prueba el sistema de alerta tú mismo</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">Ajusta el nivel de agua con el control deslizante o usa los botones rápidos. El sistema recalcula el estado igual que el prototipo real.</p>
+    </div>
+
+    <div class="glow-card rounded-3xl p-6 sm:p-10">
+      <div class="grid lg:grid-cols-[.8fr_1.2fr] gap-10">
+
+        <!-- Tank -->
+        <div class="flex flex-col items-center">
+          <div class="relative">
+            <!-- sensor -->
+            <div class="relative w-10 h-10 mx-auto mb-2 rounded-lg bg-sky-500/10 border border-sky-400/30 flex items-center justify-center">
+              <i data-lucide="radio" class="text-sky-300" style="width:16px;height:16px"></i>
+              <span id="pulse-ring-1" class="radar-ring"></span>
+              <span id="pulse-ring-2" class="radar-ring d2"></span>
+            </div>
+            <!-- tank -->
+            <div class="relative w-40 sm:w-48 h-64 sm:h-72 rounded-b-2xl rounded-t-lg border-2 border-slate-600/60 bg-black/30 overflow-hidden">
+              <!-- markers -->
+              <div class="absolute inset-0 flex flex-col justify-between py-2 pointer-events-none z-10">
+                <div class="border-t border-dashed border-white/10 relative"><span class="absolute -right-9 -top-2 text-[9px] font-mono text-slate-600">100</span></div>
+                <div class="border-t border-dashed border-amber-400/20 relative"><span class="absolute -right-8 -top-2 text-[9px] font-mono text-amber-500/70">70</span></div>
+                <div class="border-t border-dashed border-emerald-400/20 relative"><span class="absolute -right-8 -top-2 text-[9px] font-mono text-emerald-500/70">40</span></div>
+                <div class="relative"><span class="absolute -right-6 -bottom-1 text-[9px] font-mono text-slate-600">0</span></div>
+              </div>
+              <!-- water -->
+              <div id="tank-water" class="absolute bottom-0 inset-x-0 transition-all duration-500 ease-out" style="height:20%">
+                <div id="tank-water-fill" class="absolute inset-0 bg-gradient-to-b from-sky-400/80 to-blue-600/90"></div>
+                <svg class="wave absolute -top-2.5 left-0 w-[200%] h-3" viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M0 10 Q 12.5 0 25 10 T 50 10 T 75 10 T 100 10 T 125 10 T 150 10 T 175 10 T 200 10 V20 H0 Z" fill="#38bdf8" opacity="0.9"/></svg>
+                <svg class="wave wave-2 absolute -top-1.5 left-0 w-[200%] h-3" viewBox="0 0 200 20" preserveAspectRatio="none"><path d="M0 10 Q 12.5 0 25 10 T 50 10 T 75 10 T 100 10 T 125 10 T 150 10 T 175 10 T 200 10 V20 H0 Z" fill="#7dd3fc" opacity="0.5"/></svg>
+              </div>
+            </div>
+          </div>
+          <p class="mt-4 text-center font-mono text-2xl text-slate-100"><span id="tank-value">20.0</span><span class="text-sm text-slate-500"> cm</span></p>
+          <p class="text-[11px] font-mono text-slate-600 uppercase tracking-widest">Nivel de agua</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex flex-col gap-7">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <label for="level-slider" class="text-sm font-medium text-slate-300">Ajustar nivel manualmente</label>
+              <span class="text-xs font-mono text-slate-500">0–100 cm</span>
+            </div>
+            <input id="level-slider" type="range" min="0" max="100" step="0.5" value="20" class="w-full">
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <button data-preset="20" class="preset-btn px-3 py-3 rounded-xl border border-emerald-400/30 bg-emerald-400/5 text-emerald-300 text-sm font-semibold hover:bg-emerald-400/10 transition flex flex-col items-center gap-1.5">
+              <i data-lucide="check-circle-2" style="width:18px;height:18px"></i> Normal
+              <span class="text-[10px] font-mono text-emerald-500/70 font-normal">&lt; 40 cm</span>
+            </button>
+            <button data-preset="55" class="preset-btn px-3 py-3 rounded-xl border border-amber-400/30 bg-amber-400/5 text-amber-300 text-sm font-semibold hover:bg-amber-400/10 transition flex flex-col items-center gap-1.5">
+              <i data-lucide="alert-triangle" style="width:18px;height:18px"></i> Precaución
+              <span class="text-[10px] font-mono text-amber-500/70 font-normal">40–70 cm</span>
+            </button>
+            <button data-preset="85" class="preset-btn px-3 py-3 rounded-xl border border-rose-400/30 bg-rose-400/5 text-rose-300 text-sm font-semibold hover:bg-rose-400/10 transition flex flex-col items-center gap-1.5">
+              <i data-lucide="octagon-alert" style="width:18px;height:18px"></i> Peligro
+              <span class="text-[10px] font-mono text-rose-500/70 font-normal">&gt; 70 cm</span>
+            </button>
+          </div>
+
+          <!-- status card -->
+          <div id="status-card" class="rounded-2xl border-2 p-5 sm:p-6 transition-colors">
+            <div class="flex items-center gap-4">
+              <div id="status-icon-wrap" class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors">
+                <i data-lucide="check-circle-2" id="status-icon" style="width:26px;height:26px"></i>
+              </div>
+              <div>
+                <p id="status-title" class="font-display font-bold text-lg tracking-wide">NORMAL</p>
+                <p class="text-[11px] font-mono text-slate-500">Estado del sistema</p>
+              </div>
+            </div>
+            <p id="status-message" class="mt-4 text-sm font-mono leading-relaxed rounded-lg bg-black/25 px-4 py-3"></p>
+          </div>
+
+          <div class="flex items-center justify-between gap-4 flex-wrap">
+            <label class="flex items-center gap-2.5 cursor-pointer select-none">
+              <input id="monitor-toggle" type="checkbox" checked class="peer sr-only">
+              <span class="w-10 h-5.5 rounded-full bg-white/10 peer-checked:bg-sky-500 relative transition-colors" style="height:22px;width:40px">
+                <span class="absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full transition-transform peer-checked:translate-x-4.5" style="height:18px;width:18px"></span>
+              </span>
+              <span class="text-sm text-slate-300">Mostrar Monitor Serial / SMS</span>
+            </label>
+            <label class="flex items-center gap-2.5 cursor-pointer select-none">
+              <input id="sound-toggle" type="checkbox" checked class="peer sr-only">
+              <span class="w-10 rounded-full bg-white/10 peer-checked:bg-sky-500 relative transition-colors" style="height:22px;width:40px">
+                <span class="absolute top-0.5 left-0.5 bg-white rounded-full transition-transform peer-checked:translate-x-4.5" style="height:18px;width:18px"></span>
+              </span>
+              <span class="text-sm text-slate-300 flex items-center gap-1.5"><i data-lucide="volume-2" style="width:14px;height:14px"></i>Sonido de alarma</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- serial monitor -->
+      <div id="monitor-wrap" class="mt-8">
+        <div class="rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-2.5 border-b border-white/5 bg-white/[.02]">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/70"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/70"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/70"></span>
+            <span class="ml-2 text-[11px] font-mono text-slate-500">Monitor Serial — 9600 baud</span>
+          </div>
+          <div id="monitor-log" class="p-4 h-40 overflow-y-auto font-mono text-[12.5px] leading-relaxed text-emerald-400/90 term-line"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ VIABILIDAD ============ -->
+<section id="viabilidad" class="relative px-5 sm:px-8 py-24 border-t border-white/5 grid-bg">
+  <div class="absolute inset-0 bg-gradient-to-b from-[#060a14] via-transparent to-[#060a14] pointer-events-none"></div>
+  <div class="relative max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Viabilidad económica</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Una fracción del costo comercial</h2>
+      <p class="mt-4 text-slate-400 leading-relaxed">Componentes electrónicos accesibles hacen que el prototipo sea replicable en comunidades con recursos limitados.</p>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <!-- cost table -->
+      <div class="glow-card rounded-2xl overflow-hidden">
+        <div class="p-6 sm:p-7 border-b border-white/5 flex items-center gap-3">
+          <i data-lucide="receipt" class="text-sky-400" style="width:20px;height:20px"></i>
+          <h3 class="font-display font-semibold text-lg text-slate-100">Lista de materiales</h3>
+        </div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-500 text-[11px] uppercase tracking-wider border-b border-white/5 font-mono">
+              <th class="px-6 sm:px-7 py-3 font-medium">Componente</th>
+              <th class="px-3 py-3 font-medium text-center">Cant.</th>
+              <th class="px-6 sm:px-7 py-3 font-medium text-right">Costo</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5 font-mono">
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Arduino Uno</td><td class="px-3 py-3 text-center text-slate-500">1</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$15.50</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Sensor HC‑SR04</td><td class="px-3 py-3 text-center text-slate-500">2</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$7.00</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Buzzer activo</td><td class="px-3 py-3 text-center text-slate-500">1</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$2.00</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">LEDs (rojo/amarillo/verde)</td><td class="px-3 py-3 text-center text-slate-500">3</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$1.50</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Resistencias</td><td class="px-3 py-3 text-center text-slate-500">3</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$0.50</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Carcasa impermeable IP65</td><td class="px-3 py-3 text-center text-slate-500">1</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$9.45</td></tr>
+            <tr><td class="px-6 sm:px-7 py-3 text-slate-300">Protoboard y cables</td><td class="px-3 py-3 text-center text-slate-500">1</td><td class="px-6 sm:px-7 py-3 text-right text-slate-200">$3.00</td></tr>
+          </tbody>
+          <tfoot>
+            <tr class="border-t border-white/10 bg-sky-400/5">
+              <td class="px-6 sm:px-7 py-4 font-display font-semibold text-slate-100" colspan="2">Total</td>
+              <td class="px-6 sm:px-7 py-4 text-right font-display font-bold text-xl text-sky-300">$38.95</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- comparison -->
+      <div class="glow-card rounded-2xl p-6 sm:p-7">
+        <div class="flex items-center gap-3 mb-8">
+          <i data-lucide="bar-chart-3" class="text-sky-400" style="width:20px;height:20px"></i>
+          <h3 class="font-display font-semibold text-lg text-slate-100">Comparativa frente a sistemas comerciales</h3>
+        </div>
+        <div class="space-y-6">
+          <div>
+            <div class="flex justify-between text-sm mb-1.5">
+              <span class="text-slate-300 font-medium">Este prototipo</span>
+              <span class="font-mono text-emerald-400 font-semibold">$38.95</span>
+            </div>
+            <div class="h-3 rounded-full bg-white/5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500" style="width:3%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1.5">
+              <span class="text-slate-400">Sistema comercial básico</span>
+              <span class="font-mono text-slate-400">$460+</span>
+            </div>
+            <div class="h-3 rounded-full bg-white/5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-sky-500 to-sky-400" style="width:23%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1.5">
+              <span class="text-slate-400">Sistema comercial intermedio</span>
+              <span class="font-mono text-slate-400">$1,500+</span>
+            </div>
+            <div class="h-3 rounded-full bg-white/5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style="width:75%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1.5">
+              <span class="text-slate-400">Sistema comercial avanzado</span>
+              <span class="font-mono text-slate-400">$2,000+</span>
+            </div>
+            <div class="h-3 rounded-full bg-white/5 overflow-hidden"><div class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style="width:100%"></div></div>
+          </div>
+        </div>
+        <p class="text-[11px] text-slate-600 font-mono mt-6">*Valores de referencia de mercado, usados con fines comparativos.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EQUIPO / ÉTICA ============ -->
+<section id="equipo" class="relative px-5 sm:px-8 py-24 border-t border-white/5">
+  <div class="max-w-7xl mx-auto">
+    <div class="max-w-2xl mb-14">
+      <p class="text-[12px] font-mono uppercase tracking-widest text-sky-400 mb-3">Equipo y consideraciones éticas</p>
+      <h2 class="font-display font-semibold text-3xl sm:text-4xl text-slate-50 tracking-tight">Quién construyó esto, y cómo</h2>
+    </div>
+
+    <div class="grid lg:grid-cols-[.55fr_1.45fr] gap-6">
+      <!-- ethics -->
+      <div class="glow-card rounded-2xl p-7 space-y-5">
+        <div class="flex items-center gap-3">
+          <i data-lucide="shield-check" class="text-sky-400" style="width:20px;height:20px"></i>
+          <h3 class="font-display font-semibold text-slate-100">Consideraciones éticas</h3>
+        </div>
+        <div class="flex gap-3">
+          <i data-lucide="users" class="text-slate-500 shrink-0 mt-0.5" style="width:16px;height:16px"></i>
+          <p class="text-sm text-slate-400 leading-relaxed">Diseñado para comunidades vulnerables: la solución prioriza el bajo costo y la facilidad de interpretación por sobre la sofisticación técnica.</p>
+        </div>
+        <div class="flex gap-3">
+          <i data-lucide="flask-round" class="text-slate-500 shrink-0 mt-0.5" style="width:16px;height:16px"></i>
+          <p class="text-sm text-slate-400 leading-relaxed">Validado únicamente por simulación en Wokwi. No sustituye pruebas de campo antes de cualquier despliegue real.</p>
+        </div>
+        <div class="flex gap-3">
+          <i data-lucide="sparkles" class="text-slate-500 shrink-0 mt-0.5" style="width:16px;height:16px"></i>
+          <p class="text-sm text-slate-400 leading-relaxed">Se utilizó Claude como apoyo para la corrección de ortografía, la organización de la metodología y la asistencia en el código de la simulación.</p>
+        </div>
+      </div>
+
+      <!-- team tabs -->
+      <div class="glow-card rounded-2xl p-7">
+        <div id="team-tabs" class="flex flex-wrap gap-2 mb-7">
+          <button data-team="0" class="team-btn px-4 py-2 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:text-slate-100 transition tab-active">Cristian Figueroa</button>
+          <button data-team="1" class="team-btn px-4 py-2 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:text-slate-100 transition">Leidy Reyes</button>
+          <button data-team="2" class="team-btn px-4 py-2 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:text-slate-100 transition">Sahid Ortiz</button>
+        </div>
+        <div id="team-panel"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="relative px-5 sm:px-8 pt-16 pb-8 border-t border-white/5">
+  <div class="max-w-7xl mx-auto">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
+      <div class="lg:col-span-2">
+        <div class="flex items-center gap-2.5 mb-4">
+          <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center">
+            <i data-lucide="radar" class="text-white" style="width:16px;height:16px"></i>
+          </span>
+          <span class="font-display font-semibold text-slate-100">SAT · Inundaciones</span>
+        </div>
+        <p class="text-sm text-slate-500 leading-relaxed max-w-sm">Prototipo experimental de alerta temprana ante inundaciones, diseñado y validado mediante simulación como propuesta accesible para comunidades cerca de ríos y quebradas en Panamá.</p>
+      </div>
+      <div>
+        <p class="text-[11px] uppercase tracking-widest text-slate-500 font-mono mb-4">Navegación</p>
+        <ul class="space-y-2.5 text-sm text-slate-400">
+          <li><a href="#problema" class="hover:text-slate-200 transition">El problema</a></li>
+          <li><a href="#metodologia" class="hover:text-slate-200 transition">Metodología</a></li>
+          <li><a href="#simulador" class="hover:text-slate-200 transition">Simulador</a></li>
+          <li><a href="#viabilidad" class="hover:text-slate-200 transition">Viabilidad</a></li>
+        </ul>
+      </div>
+      <div>
+        <p class="text-[11px] uppercase tracking-widest text-slate-500 font-mono mb-4">Institución</p>
+        <ul class="space-y-2.5 text-sm text-slate-400">
+          <li>Universidad Tecnológica de Panamá</li>
+          <li>Centro Regional de Veraguas</li>
+          <li>Licenciatura en Ciberseguridad</li>
+        </ul>
+      </div>
+    </div>
+    <div class="pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <p class="text-xs text-slate-600">© 2026 Cristian Figueroa, Leidy Reyes, Sahid Ortiz. Proyecto académico.</p>
+      <p class="text-xs text-slate-600 font-mono">Simulado en Wokwi · Construido con Arduino Uno + HC‑SR04</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+lucide.createIcons();
+
+/* ============================================================
+   DATA
+============================================================ */
+const components = [
+  {
+    id: 'arduino', name: 'Arduino Uno', icon: 'cpu', cost: '$15.50', qty: '1 unidad',
+    desc: 'Placa de desarrollo basada en el microcontrolador ATmega328P. Procesa las mediciones del sensor ultrasónico y controla todo el sistema de alertas: LEDs, buzzer y mensajes por el Monitor Serial.',
+    specs: ['Microcontrolador ATmega328P', 'Bajo costo y fácil programación', 'Compatible con múltiples sensores']
+  },
+  {
+    id: 'sensor', name: 'Sensor Ultrasónico HC‑SR04', icon: 'radio', cost: '$7.00', qty: '2 unidades',
+    desc: 'Mide la distancia mediante el tiempo que tarda un pulso de sonido en regresar al receptor. Es el componente central del monitoreo: convierte esa distancia en el nivel de agua calculado.',
+    specs: ['Rango de medición: 2 – 450 cm', 'Precisión aproximada: 3 mm', 'Pines TRIG y ECHO']
+  },
+  {
+    id: 'leds', name: 'LEDs indicadores', icon: 'lightbulb', cost: '$1.50', qty: '3 unidades',
+    desc: 'Un LED verde, uno amarillo y uno rojo comunican de un vistazo el estado del sistema: normal, precaución o peligro, sin necesidad de leer ninguna pantalla.',
+    specs: ['Verde — estado normal', 'Amarillo — precaución', 'Rojo — peligro']
+  },
+  {
+    id: 'buzzer', name: 'Buzzer activo', icon: 'bell-ring', cost: '$2.00', qty: '1 unidad',
+    desc: 'Genera una alarma sonora intermitente exclusivamente en el estado de peligro, reforzando la alerta visual cuando el nivel de agua supera el umbral crítico.',
+    specs: ['Activación solo en estado de peligro', 'Señal audible intermitente', 'Conectado al pin D7']
+  },
+  {
+    id: 'resistencias', name: 'Resistencias', icon: 'zap', cost: '$0.50', qty: '3 unidades',
+    desc: 'Protegen a los LEDs de sobrecorriente, asegurando que el circuito funcione de forma estable durante el monitoreo continuo.',
+    specs: ['Una por cada LED', 'Protección del circuito']
+  },
+  {
+    id: 'carcasa', name: 'Carcasa impermeable IP65', icon: 'package', cost: '$9.45', qty: '1 unidad',
+    desc: 'Protege los componentes electrónicos de la humedad y la intemperie, pensada para una eventual instalación cerca de ríos o quebradas.',
+    specs: ['Clasificación IP65', 'Resistente a salpicaduras y polvo']
+  },
+  {
+    id: 'proto', name: 'Protoboard y cables', icon: 'git-branch', cost: '$3.00', qty: '1 set',
+    desc: 'Permite ensamblar y probar el circuito completo antes de una eventual soldadura definitiva, facilitando ajustes durante el desarrollo.',
+    specs: ['Ensamblaje sin soldadura', 'Ideal para pruebas e iteración']
+  },
+];
+
+const teamData = [
+  {
+    initials: 'CF', name: 'Cristian Figueroa',
+    role: 'Licenciatura en Ciberseguridad — Facultad de Ingeniería de Sistemas Computacionales',
+    bio: 'Enfocado en la arquitectura del sistema y la lógica de clasificación de riesgo, cuidando que el prototipo sea trazable desde los requisitos hasta las pruebas de simulación.'
+  },
+  {
+    initials: 'LR', name: 'Leidy Reyes',
+    role: 'Licenciatura en Ciberseguridad — Facultad de Ingeniería de Sistemas Computacionales',
+    bio: 'Trabajó en la fase de empatía con las comunidades en riesgo y en la definición de requisitos, buscando que las alertas fueran claras para cualquier usuario.'
+  },
+  {
+    initials: 'SO', name: 'Sahid Ortiz',
+    role: 'Licenciatura en Ciberseguridad — Facultad de Ingeniería de Sistemas Computacionales',
+    bio: 'Responsable de la validación del prototipo en Wokwi, documentando los escenarios de prueba para los estados normal, precaución y peligro.'
+  },
+];
+
+/* ============================================================
+   COMPONENT LIST + DETAIL PANEL
+============================================================ */
+const compListEl = document.getElementById('comp-list');
+const compDetailEl = document.getElementById('comp-detail');
+
+function renderComponentList(activeId){
+  compListEl.innerHTML = components.map(c => `
+    <button data-id="${c.id}" class="comp-item w-full text-left flex items-center gap-4 px-5 py-4 rounded-xl border border-white/5 bg-[#0d1526] hover:border-sky-400/30 transition ${c.id===activeId ? 'comp-active' : ''}">
+      <span class="w-10 h-10 rounded-lg bg-sky-400/10 border border-sky-400/20 flex items-center justify-center shrink-0">
+        <i data-lucide="${c.icon}" class="text-sky-300" style="width:18px;height:18px"></i>
+      </span>
+      <span class="flex-1 min-w-0">
+        <span class="block text-sm font-medium text-slate-200 truncate">${c.name}</span>
+        <span class="block text-xs text-slate-500 font-mono">${c.qty}</span>
+      </span>
+      <span class="text-sm font-mono text-slate-400 shrink-0">${c.cost}</span>
+    </button>
+  `).join('');
+  lucide.createIcons();
+  compListEl.querySelectorAll('.comp-item').forEach(btn => {
+    btn.addEventListener('click', () => selectComponent(btn.dataset.id));
+  });
+}
+
+function renderComponentDetail(id){
+  const c = components.find(x => x.id === id);
+  compDetailEl.innerHTML = `
+    <div class="flex items-start gap-4 mb-5">
+      <span class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400/20 to-blue-600/20 border border-sky-400/25 flex items-center justify-center shrink-0">
+        <i data-lucide="${c.icon}" class="text-sky-300" style="width:26px;height:26px"></i>
+      </span>
+      <div>
+        <h4 class="font-display font-semibold text-xl text-slate-100">${c.name}</h4>
+        <p class="text-sm font-mono text-sky-400 mt-0.5">${c.cost} · ${c.qty}</p>
+      </div>
+    </div>
+    <p class="text-sm text-slate-400 leading-relaxed mb-5">${c.desc}</p>
+    <div class="space-y-2">
+      ${c.specs.map(s => `
+        <div class="flex items-center gap-2.5 text-sm text-slate-300">
+          <i data-lucide="check" class="text-emerald-400 shrink-0" style="width:15px;height:15px"></i> ${s}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function selectComponent(id){
+  renderComponentList(id);
+  renderComponentDetail(id);
+}
+selectComponent('arduino');
+
+/* ============================================================
+   ACCORDION
+============================================================ */
+document.querySelectorAll('.accordion-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const panel = document.getElementById(btn.dataset.target);
+    const chevron = btn.querySelector('.acc-chev');
+    const isOpen = !panel.classList.contains('hidden');
+    document.querySelectorAll('.acc-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.acc-chev').forEach(c => c.style.transform = 'rotate(0deg)');
+    if(!isOpen){
+      panel.classList.remove('hidden');
+      chevron.style.transform = 'rotate(180deg)';
+    }
+  });
+});
+
+/* ============================================================
+   TEAM TABS
+============================================================ */
+function renderTeam(idx){
+  const t = teamData[idx];
+  document.getElementById('team-panel').innerHTML = `
+    <div class="flex items-start gap-5">
+      <span class="w-14 h-14 rounded-full bg-[#121e35] border border-white/10 flex items-center justify-center text-sm font-display font-semibold text-sky-300 shrink-0">${t.initials}</span>
+      <div>
+        <h4 class="font-display font-semibold text-lg text-slate-100">${t.name}</h4>
+        <p class="text-xs font-mono text-sky-400/80 mt-1">${t.role}</p>
+        <p class="text-sm text-slate-400 leading-relaxed mt-3">${t.bio}</p>
+      </div>
+    </div>
+  `;
+}
+document.querySelectorAll('.team-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('tab-active'));
+    btn.classList.add('tab-active');
+    renderTeam(Number(btn.dataset.team));
+  });
+});
+renderTeam(0);
+
+/* ============================================================
+   HERO MINI TELEMETRY (decorative auto-cycle)
+============================================================ */
+(function heroDemo(){
+  const distEl = document.getElementById('hero-dist');
+  const levelEl = document.getElementById('hero-level');
+  const stateEl = document.getElementById('hero-state');
+  const points = [18, 55, 82, 30, 65, 12];
+  let i = 0;
+  function tick(){
+    const nivel = points[i % points.length];
+    const dist = (100 - nivel).toFixed(2);
+    distEl.textContent = dist + ' cm';
+    levelEl.textContent = nivel.toFixed(2) + ' cm';
+    let cfg;
+    if(nivel < 40) cfg = {icon:'check-circle-2', color:'#34d399', border:'border-emerald-400/30', bg:'bg-emerald-400/5', label:'ESTADO NORMAL'};
+    else if(nivel <= 70) cfg = {icon:'alert-triangle', color:'#fbbf24', border:'border-amber-400/30', bg:'bg-amber-400/5', label:'PRECAUCIÓN'};
+    else cfg = {icon:'octagon-alert', color:'#f87171', border:'border-rose-400/30', bg:'bg-rose-400/5', label:'PELIGRO'};
+    stateEl.className = `mt-3 rounded-xl border px-4 py-3 flex items-center gap-2.5 transition-colors ${cfg.border} ${cfg.bg}`;
+    stateEl.innerHTML = `<i data-lucide="${cfg.icon}" style="width:18px;height:18px;color:${cfg.color}"></i><span class="font-mono text-sm font-semibold tracking-wide" style="color:${cfg.color}">${cfg.label}</span>`;
+    lucide.createIcons();
+    i++;
+  }
+  tick();
+  setInterval(tick, 3200);
+})();
+
+/* ============================================================
+   SIMULATOR
+============================================================ */
+const slider = document.getElementById('level-slider');
+const tankWater = document.getElementById('tank-water');
+const tankValue = document.getElementById('tank-value');
+const statusCard = document.getElementById('status-card');
+const statusIconWrap = document.getElementById('status-icon-wrap');
+const statusIcon = document.getElementById('status-icon');
+const statusTitle = document.getElementById('status-title');
+const statusMessage = document.getElementById('status-message');
+const monitorToggle = document.getElementById('monitor-toggle');
+const monitorWrap = document.getElementById('monitor-wrap');
+const monitorLog = document.getElementById('monitor-log');
+const soundToggle = document.getElementById('sound-toggle');
+
+let audioCtx = null;
+let buzzerInterval = null;
+let lastState = null;
+
+function ensureAudio(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function beep(){
+  if(!audioCtx || !soundToggle.checked) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = 1000;
+  gain.gain.value = 0.06;
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
+  osc.stop(audioCtx.currentTime + 0.19);
+}
+
+function startBuzzer(){
+  if(buzzerInterval) return;
+  ensureAudio();
+  beep();
+  buzzerInterval = setInterval(beep, 450);
+}
+function stopBuzzer(){
+  clearInterval(buzzerInterval);
+  buzzerInterval = null;
+}
+
+function getState(nivel){
+  if(nivel < 40) return 'normal';
+  if(nivel <= 70) return 'precaucion';
+  return 'peligro';
+}
+
+const stateConfig = {
+  normal: {
+    label: 'NORMAL', icon: 'check-circle-2',
+    border: 'border-emerald-400/40', bg: 'bg-emerald-400/[.06]',
+    iconBg: 'bg-emerald-400/15', iconColor: 'text-emerald-400', titleColor: 'text-emerald-300',
+    sms: 'SMS: NIVEL NORMAL. Monitoreo activo.'
+  },
+  precaucion: {
+    label: 'PRECAUCIÓN', icon: 'alert-triangle',
+    border: 'border-amber-400/40', bg: 'bg-amber-400/[.06]',
+    iconBg: 'bg-amber-400/15', iconColor: 'text-amber-400', titleColor: 'text-amber-300',
+    sms: 'SMS: NIVEL DE PRECAUCIÓN. Monitorear área de cerca.'
+  },
+  peligro: {
+    label: 'PELIGRO', icon: 'octagon-alert',
+    border: 'border-rose-500/60', bg: 'bg-rose-500/[.08]',
+    iconBg: 'bg-rose-500/20', iconColor: 'text-rose-400', titleColor: 'text-rose-300',
+    sms: 'SMS: PELIGRO DE INUNDACIÓN. EVACUAR ZONA INMEDIATAMENTE.'
+  }
+};
+
+function logLine(text, cls){
+  if(!monitorToggle.checked) return;
+  const line = document.createElement('div');
+  line.className = cls || '';
+  line.textContent = text;
+  monitorLog.appendChild(line);
+  monitorLog.scrollTop = monitorLog.scrollHeight;
+  while(monitorLog.children.length > 60){
+    monitorLog.removeChild(monitorLog.firstChild);
+  }
+}
+
+function updateSimulator(nivel, opts){
+  opts = opts || {};
+  nivel = Math.max(0, Math.min(100, nivel));
+  const distancia = (100 - nivel);
+  const state = getState(nivel);
+  const cfg = stateConfig[state];
+
+  // tank
+  tankWater.style.height = nivel + '%';
+  tankValue.textContent = nivel.toFixed(1);
+
+  // status card
+  statusCard.className = `rounded-2xl border-2 p-5 sm:p-6 transition-colors ${cfg.border} ${cfg.bg} ${state === 'peligro' ? 'alert-pulse' : ''}`;
+  statusIconWrap.className = `w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${cfg.iconBg}`;
+  statusIcon.setAttribute('data-lucide', cfg.icon);
+  statusIcon.className = cfg.iconColor;
+  statusTitle.textContent = cfg.label;
+  statusTitle.className = `font-display font-bold text-lg tracking-wide ${cfg.titleColor}`;
+  statusMessage.textContent = cfg.sms;
+  statusMessage.className = `mt-4 text-sm font-mono leading-relaxed rounded-lg bg-black/25 px-4 py-3 ${state === 'peligro' ? 'text-rose-300 font-semibold' : 'text-slate-300'}`;
+  lucide.createIcons();
+
+  // serial monitor
+  if(opts.log !== false){
+    logLine('--- SISTEMA DE ALERTA TEMPRANA ---', 'text-slate-500');
+    logLine(`Distancia: ${distancia.toFixed(2)} cm | Nivel: ${nivel.toFixed(2)} cm`, 'text-sky-400');
+    logLine(cfg.sms, state === 'peligro' ? 'text-rose-400 font-semibold' : 'text-emerald-400');
+  }
+
+  // buzzer
+  if(state === 'peligro'){
+    if(lastState !== 'peligro') startBuzzer();
+  } else {
+    stopBuzzer();
+  }
+  lastState = state;
+}
+
+let logThrottle = null;
+slider.addEventListener('input', () => {
+  ensureAudio();
+  updateSimulator(Number(slider.value), {log:false});
+  clearTimeout(logThrottle);
+  logThrottle = setTimeout(() => {
+    logLine('--- SISTEMA DE ALERTA TEMPRANA ---', 'text-slate-500');
+    const nivel = Number(slider.value);
+    logLine(`Distancia: ${(100-nivel).toFixed(2)} cm | Nivel: ${nivel.toFixed(2)} cm`, 'text-sky-400');
+    logLine(stateConfig[getState(nivel)].sms, getState(nivel) === 'peligro' ? 'text-rose-400 font-semibold' : 'text-emerald-400');
+  }, 350);
+});
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    ensureAudio();
+    const val = Number(btn.dataset.preset);
+    slider.value = val;
+    updateSimulator(val);
+  });
+});
+
+soundToggle.addEventListener('change', () => {
+  if(!soundToggle.checked) stopBuzzer();
+  else if(lastState === 'peligro') startBuzzer();
+});
+
+monitorToggle.addEventListener('change', () => {
+  monitorWrap.classList.toggle('hidden', !monitorToggle.checked);
+});
+
+// init
+updateSimulator(20);
+logLine('Sistema inicializado. Esperando lecturas del sensor…', 'text-slate-600');
+</script>
+</body>
+</html>
